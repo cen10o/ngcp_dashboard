@@ -125,8 +125,6 @@
     </div>
 
   </div>
-
-  <footer>Sample data shown. See the top of the code for where to plug in your own.</footer>
 </div>
 
 <script>
@@ -217,14 +215,6 @@ new Chart("impactChart", {
       { label: "After",  data: DATA.impact.after,  backgroundColor: BLUE,  borderRadius: 6 }
     ] },
   options: { scales:{ y:{ beginAtZero:true, max:5 } } }
-});
-
-// 3. Participation
-new Chart("participationChart", {
-  type: "bar",
-  data: { labels: DATA.participation.labels,
-    datasets: [{ label: "Responses", data: DATA.participation.values, backgroundColor: AMBER, borderRadius: 6 }] },
-  options: { plugins:{legend:{display:false}}, scales:{ y:{ beginAtZero:true } } }
 });
 
 // 4. Mentor experience (start vs end)
