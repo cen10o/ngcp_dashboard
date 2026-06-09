@@ -5,10 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Summer Internship Dashboard</title>
 
-<!-- Chart.js: the library that draws the charts. Loaded from the web. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 
-<!-- Fonts -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -20,9 +18,9 @@
     --ink:#1E2A38;
     --muted:#7A8699;
     --line:#E5E8EE;
-    --green:#1B9E8A;   /* engagement / "now" */
-    --blue:#3B6FB5;    /* impact / comparison */
-    --amber:#E0A030;   /* highlight */~
+    --green:#1B9E8A;
+    --blue:#3B6FB5;
+    --amber:#E0A030;
     --shadow:0 1px 3px rgba(30,42,56,.06), 0 6px 20px rgba(30,42,56,.05);
   }
   *{box-sizing:border-box;}
@@ -44,6 +42,20 @@
   }
   .sub{color:var(--muted); margin:8px 0 0; font-size:15px;}
 
+  /* status bar */
+  .status-bar{
+    display:flex; align-items:center; gap:10px;
+    margin:12px 0 0; font-size:13px; color:var(--muted);
+    min-height:20px;
+  }
+  .status-dot{
+    width:8px; height:8px; border-radius:50%;
+    background:var(--muted); flex-shrink:0;
+    transition:background .3s;
+  }
+  .status-dot.live{background:var(--green);}
+  .status-dot.error{background:#E05A3A;}
+
   /* summary stat cards */
   .stats{
     display:grid; grid-template-columns:repeat(4,1fr);
@@ -52,6 +64,7 @@
   .stat{
     background:var(--card); border:1px solid var(--line);
     border-radius:14px; padding:20px; box-shadow:var(--shadow);
+    transition:opacity .3s;
   }
   .stat .num{font-family:'Fraunces',serif; font-size:32px; font-weight:600;}
   .stat .lbl{color:var(--muted); font-size:13px; margin-top:4px;}
@@ -70,7 +83,14 @@
   .panel p{color:var(--muted); font-size:13px; margin:0 0 16px;}
   .canvas-box{position:relative; height:280px;}
 
-  footer{margin-top:32px; color:var(--muted); font-size:13px; text-align:center;}
+  /* loading skeleton pulse */
+  @keyframes pulse{0%,100%{opacity:.5}50%{opacity:1}}
+  .loading .num,.loading .lbl{
+    background:var(--line); border-radius:6px; color:transparent;
+    animation:pulse 1.4s ease-in-out infinite;
+  }
+  .loading .num{width:60%; display:block;}
+  .loading .lbl{width:80%; display:block; margin-top:6px;}
 
   @media(max-width:760px){
     .stats{grid-template-columns:repeat(2,1fr);}
@@ -85,13 +105,15 @@
   <header>
     <p class="eyebrow">Next Gen Career Pathways</p>
     <h1>Summer Internship Dashboard</h1>
-    <p class="sub">Engagement &amp; impact across the program. Showing sample data — replace with your survey numbers.</p>
+    <p class="sub">Engagement &amp; impact across the program.</p>
+    <div class="status-bar">
+      <span class="status-dot" id="statusDot"></span>
+      <span id="statusText">Connecting…</span>
+    </div>
   </header>
 
-  <!-- ===== TOP STAT CARDS ===== -->
   <section class="stats" id="statCards"></section>
 
-  <!-- ===== CHART PANELS ===== -->
   <div class="grid">
 
     <div class="panel">
@@ -122,52 +144,38 @@
 </div>
 
 <script>
-/* ============================================================
-   YOUR DATA GOES HERE
-   ------------------------------------------------------------
-   Right now these are FAKE numbers so you can see it working.
-   Replace each one with your real survey numbers.
-   Later, you can have this section pull from Google Sheets
-   automatically (see the note at the bottom of this file).
-   ============================================================ */
+// ============================================================
+//  CONFIGURATION
+//  Paste your deployed Apps Script Web App URL below.
+//  Leave empty ("") to run on sample data only.
+// ============================================================
+const SCRIPT_URL = "";          // e.g. "https://script.google.com/macros/s/.../exec"
+const POLL_INTERVAL_MS = 60000; // refresh every 60 seconds
 
-const DATA = {
-
-  // Top summary cards: label + number
+// ============================================================
+//  SAMPLE DATA  — used when SCRIPT_URL is empty or unreachable
+// ============================================================
+const SAMPLE_DATA = {
   stats: [
-    { lbl: "Interns enrolled",      num: "42"   },
-    { lbl: "Survey responses",      num: "318"  },
-    { lbl: "Avg. event rating",     num: "4.3"  },
-    { lbl: "Confidence growth",     num: "+1.4" }
+    { lbl: "Interns enrolled",  num: "42"   },
+    { lbl: "Survey responses",  num: "318"  },
+    { lbl: "Avg. event rating", num: "4.3"  },
+    { lbl: "Confidence growth", num: "+1.4" }
   ],
-
-  // Engagement: average rating per event
   engagement: {
     labels: ["Orientation", "Fun Bus", "Friday Learning", "Pre-internship", "Post-internship"],
     values: [4.5, 4.1, 4.4, 3.9, 4.6]
   },
-
-  // Impact: same questions asked before AND after
   impact: {
     labels: ["Career clarity", "Job skills", "Confidence", "Networking"],
     before: [2.8, 3.0, 3.1, 2.5],
     after:  [4.1, 4.3, 4.5, 3.9]
   },
-
-  // Participation: how many people responded to each survey
-  participation: {
-    labels: ["Orientation", "Fun Bus", "Friday Learning", "Pre-internship", "Post-internship"],
-    values: [40, 35, 120, 42, 49]
-  },
-
-  // Mentor experience: start of program vs. end
   mentor: {
     labels: ["Felt prepared", "Felt supported", "Would mentor again"],
     start: [3.2, 3.5, 3.8],
     end:   [4.4, 4.2, 4.6]
   },
-
-  // Themes pulled from your open-ended coding
   themes: {
     labels: ["Hands-on experience", "Mentor support", "Career clarity",
              "Professional skills", "Networking", "Technical skills"],
@@ -175,69 +183,133 @@ const DATA = {
   }
 };
 
-/* ============================================================
-   DASHBOARD CODE  (you usually won't need to touch below here)
-   ============================================================ */
-
+// ============================================================
+//  CHART SETUP
+// ============================================================
 const GREEN = "#1B9E8A", BLUE = "#3B6FB5", AMBER = "#E0A030", MUTED = "#7A8699";
 
-// shared chart styling
 Chart.defaults.font.family = "'Inter', sans-serif";
 Chart.defaults.color = MUTED;
-Chart.defaults.plugins.legend.labels.boxWidth = 12;
+Chart.defaults.plugins.legend.labels.boxWidth  = 12;
 Chart.defaults.plugins.legend.labels.boxHeight = 12;
 
-// build the top stat cards
-document.getElementById("statCards").innerHTML = DATA.stats.map(s =>
-  `<div class="stat"><div class="num">${s.num}</div><div class="lbl">${s.lbl}</div></div>`
-).join("");
+const charts = {};
 
-// 1. Engagement
-new Chart("engagementChart", {
-  type: "bar",
-  data: { labels: DATA.engagement.labels,
-    datasets: [{ label: "Avg rating", data: DATA.engagement.values, backgroundColor: GREEN, borderRadius: 6 }] },
-  options: { plugins:{legend:{display:false}}, scales:{ y:{ beginAtZero:true, max:5 } } }
-});
+function initCharts() {
+  charts.engagement = new Chart("engagementChart", {
+    type: "bar",
+    data: { labels: [], datasets: [{ label: "Avg rating", data: [], backgroundColor: GREEN, borderRadius: 6 }] },
+    options: { animation: { duration: 600 }, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, max: 5 } } }
+  });
 
-// 2. Impact (before vs after)
-new Chart("impactChart", {
-  type: "bar",
-  data: { labels: DATA.impact.labels,
-    datasets: [
-      { label: "Before", data: DATA.impact.before, backgroundColor: MUTED, borderRadius: 6 },
-      { label: "After",  data: DATA.impact.after,  backgroundColor: BLUE,  borderRadius: 6 }
-    ] },
-  options: { scales:{ y:{ beginAtZero:true, max:5 } } }
-});
+  charts.impact = new Chart("impactChart", {
+    type: "bar",
+    data: {
+      labels: [],
+      datasets: [
+        { label: "Before", data: [], backgroundColor: MUTED, borderRadius: 6 },
+        { label: "After",  data: [], backgroundColor: BLUE,  borderRadius: 6 }
+      ]
+    },
+    options: { animation: { duration: 600 }, scales: { y: { beginAtZero: true, max: 5 } } }
+  });
 
-// 4. Mentor experience (start vs end)
-new Chart("mentorChart", {
-  type: "bar",
-  data: { labels: DATA.mentor.labels,
-    datasets: [
-      { label: "Start", data: DATA.mentor.start, backgroundColor: MUTED, borderRadius: 6 },
-      { label: "End",   data: DATA.mentor.end,   backgroundColor: GREEN, borderRadius: 6 }
-    ] },
-  options: { scales:{ y:{ beginAtZero:true, max:5 } } }
-});
+  charts.mentor = new Chart("mentorChart", {
+    type: "bar",
+    data: {
+      labels: [],
+      datasets: [
+        { label: "Start", data: [], backgroundColor: MUTED, borderRadius: 6 },
+        { label: "End",   data: [], backgroundColor: GREEN, borderRadius: 6 }
+      ]
+    },
+    options: { animation: { duration: 600 }, scales: { y: { beginAtZero: true, max: 5 } } }
+  });
 
-// 5. Themes (horizontal bar)
-new Chart("themesChart", {
-  type: "bar",
-  data: { labels: DATA.themes.labels,
-    datasets: [{ label: "Mentions", data: DATA.themes.counts, backgroundColor: BLUE, borderRadius: 6 }] },
-  options: { indexAxis: "y", plugins:{legend:{display:false}}, scales:{ x:{ beginAtZero:true } } }
-});
+  charts.themes = new Chart("themesChart", {
+    type: "bar",
+    data: { labels: [], datasets: [{ label: "Mentions", data: [], backgroundColor: BLUE, borderRadius: 6 }] },
+    options: { animation: { duration: 600 }, indexAxis: "y", plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true } } }
+  });
+}
 
-/* ============================================================
-   LATER: AUTO-PULL FROM GOOGLE SHEETS
-   ------------------------------------------------------------
-   When you're ready to connect your real sheet, you'll replace
-   the fixed DATA above with a fetch() that reads your sheet and
-   fills in these same fields. The charts won't change — they
-   just read whatever is in DATA. We can build that step together.
-   ============================================================ */
+// ============================================================
+//  RENDER
+// ============================================================
+function renderDashboard(data) {
+  // Stat cards
+  document.getElementById("statCards").innerHTML = data.stats.map(s =>
+    `<div class="stat"><div class="num">${s.num}</div><div class="lbl">${s.lbl}</div></div>`
+  ).join("");
+
+  // Engagement
+  charts.engagement.data.labels              = data.engagement.labels;
+  charts.engagement.data.datasets[0].data   = data.engagement.values;
+  charts.engagement.update();
+
+  // Impact
+  charts.impact.data.labels                 = data.impact.labels;
+  charts.impact.data.datasets[0].data       = data.impact.before;
+  charts.impact.data.datasets[1].data       = data.impact.after;
+  charts.impact.update();
+
+  // Mentor
+  charts.mentor.data.labels                 = data.mentor.labels;
+  charts.mentor.data.datasets[0].data       = data.mentor.start;
+  charts.mentor.data.datasets[1].data       = data.mentor.end;
+  charts.mentor.update();
+
+  // Themes
+  charts.themes.data.labels                 = data.themes.labels;
+  charts.themes.data.datasets[0].data       = data.themes.counts;
+  charts.themes.update();
+}
+
+// ============================================================
+//  STATUS BAR
+// ============================================================
+function setStatus(state, text) {
+  const dot  = document.getElementById("statusDot");
+  const label = document.getElementById("statusText");
+  dot.className = "status-dot" + (state === "live" ? " live" : state === "error" ? " error" : "");
+  label.textContent = text;
+}
+
+// ============================================================
+//  DATA FETCHING
+// ============================================================
+async function fetchAndRender() {
+  if (!SCRIPT_URL) {
+    renderDashboard(SAMPLE_DATA);
+    setStatus("", "Showing sample data — add your SCRIPT_URL to connect live data");
+    return;
+  }
+
+  try {
+    setStatus("", "Refreshing…");
+    // Apps Script requires no-cors mode won't work; use a CORS proxy or same-origin.
+    // The Apps Script Web App deployed as "Anyone" supports CORS natively.
+    const res  = await fetch(SCRIPT_URL);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    renderDashboard(data);
+    const time = data.lastUpdated
+      ? new Date(data.lastUpdated).toLocaleTimeString()
+      : new Date().toLocaleTimeString();
+    setStatus("live", `Live data · last updated ${time}`);
+  } catch (err) {
+    console.warn("Fetch failed, using sample data:", err);
+    renderDashboard(SAMPLE_DATA);
+    setStatus("error", `Could not reach sheet — showing sample data (${err.message})`);
+  }
+}
+
+// ============================================================
+//  BOOT
+// ============================================================
+initCharts();
+fetchAndRender();
+setInterval(fetchAndRender, POLL_INTERVAL_MS);
 </script>
 </body>
 </html>
