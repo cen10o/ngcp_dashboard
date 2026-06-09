@@ -1,30 +1,48 @@
 // ============================================================
 //  NGCP Dashboard — Google Apps Script Web App
-//  HOW TO DEPLOY:
+//
+//  DEPLOY STEPS:
 //  1. Open your Google Sheet → Extensions → Apps Script
 //  2. Delete any existing code and paste this entire file
 //  3. Fill in CONFIG below with your real tab names & column indices
-//  4. Click Deploy → New deployment → Web app
-//     - Execute as: Me
-//     - Who has access: Anyone
-//  5. Copy the Web app URL and paste it into index.html as SCRIPT_URL
+//  4. Set your secret token (ONE-TIME SETUP):
+//       Apps Script editor → Project Settings (gear icon)
+//       → Script properties → Add property
+//       Name:  DASHBOARD_TOKEN
+//       Value: any strong random string you choose
+//              (e.g. generate one at: https://1password.com/password-generator/)
+//  5. Click Deploy → New deployment → Web app
+//       Execute as: Me
+//       Who has access: Anyone   ← token is the auth layer, not Google login
+//  6. Copy the Web app URL → paste into index.html as SCRIPT_URL
+//  7. Share the token value with anyone who needs dashboard access
+//
+//  PRIVACY NOTE:
+//  This script NEVER returns individual responses. Only aggregated numbers
+//  (averages, counts) leave the spreadsheet. Names, emails, and IDs stay
+//  in the sheet regardless of what columns exist.
 // ============================================================
 
 // ── CONFIGURATION ──────────────────────────────────────────
 // Column indices are 0-based. Column A = 0, B = 1, C = 2 …
-// Google Forms always puts the timestamp in column 0 (A).
-// Your first question is usually column 1 (B), and so on.
+// Google Forms puts the timestamp in column 0 (A).
+//
+// !! IMPORTANT: Only include columns that contain Likert ratings
+//    or open-ended text answers. NEVER include columns that hold
+//    names, email addresses, student IDs, or any other PII.
+//    The aggregation functions only ever return numbers and keyword
+//    counts — but setting wrong columns here would cause raw PII
+//    to flow into open-ended text matching, even if it isn't sent.
 
 const CONFIG = {
 
-  // Each survey that feeds the "Engagement by event" bar chart.
-  // Add or remove objects to match your actual tabs.
+  // Each survey tab that feeds the "Engagement by event" chart.
   surveys: [
     {
-      tabName:          'Orientation',       // exact name of the Sheet tab
+      tabName:          'Orientation',       // exact Sheet tab name
       eventLabel:       'Orientation',       // label shown on the chart
-      likertColumns:    [1, 2, 3, 4],        // columns that contain 1–5 ratings
-      openEndedColumns: [5, 6],              // columns that contain free-text answers
+      likertColumns:    [1, 2, 3, 4],        // 1–5 rating columns (NOT name/email cols)
+      openEndedColumns: [5, 6],              // free-text columns (NOT name/email cols)
     },
     {
       tabName:          'Fun Bus',
@@ -53,28 +71,25 @@ const CONFIG = {
   ],
 
   // "Impact: before vs. after" grouped bar chart.
-  // Pair the same question from two different tabs.
   impact: {
-    preTab:      'Pre-Internship',   // tab with pre-program responses
-    postTab:     'Post-Internship',  // tab with post-program responses
-    // One label per question, in the same order as the columns below.
+    preTab:      'Pre-Internship',
+    postTab:     'Post-Internship',
     questions:   ['Career clarity', 'Job skills', 'Confidence', 'Networking'],
-    preColumns:  [1, 2, 3, 4],      // Likert columns in the pre tab
-    postColumns: [1, 2, 3, 4],      // Likert columns in the post tab (same questions)
+    preColumns:  [1, 2, 3, 4],
+    postColumns: [1, 2, 3, 4],
   },
 
   // "Mentor experience" grouped bar chart.
   mentor: {
-    startTab:     'Mentor Start',    // tab filled out at program start
-    endTab:       'Mentor End',      // tab filled out at program end
+    startTab:     'Mentor Start',
+    endTab:       'Mentor End',
     questions:    ['Felt prepared', 'Felt supported', 'Would mentor again'],
     startColumns: [1, 2, 3],
     endColumns:   [1, 2, 3],
   },
 
   // Keyword themes for open-ended responses.
-  // The script counts how many responses contain at least one keyword per theme.
-  // Add keywords that match how your interns actually write.
+  // Counts how many responses contain at least one keyword per theme.
   themes: [
     { label: 'Hands-on experience', keywords: ['hands-on', 'hands on', 'practical', 'real-world', 'experience', 'applied'] },
     { label: 'Mentor support',       keywords: ['mentor', 'guidance', 'support', 'helped me', 'advisor'] },
@@ -85,16 +100,34 @@ const CONFIG = {
   ],
 };
 
-// ── WEB APP ENTRY POINT ────────────────────────────────────
+// ── AUTHENTICATION ─────────────────────────────────────────
 
-function doGet() {
-  const result = aggregateData();
+function doGet(e) {
+  const token    = e && e.parameter ? e.parameter.token : null;
+  const expected = PropertiesService.getScriptProperties().getProperty('DASHBOARD_TOKEN');
+
+  // Reject if the token property was never configured.
+  if (!expected) {
+    return jsonResponse({ error: 'Server misconfiguration: DASHBOARD_TOKEN not set in Script Properties.' });
+  }
+
+  // Reject if the caller didn't supply the right token.
+  if (token !== expected) {
+    return jsonResponse({ error: 'Unauthorized' });
+  }
+
+  return jsonResponse(aggregateData());
+}
+
+function jsonResponse(obj) {
   return ContentService
-    .createTextOutput(JSON.stringify(result))
+    .createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
 }
 
 // ── AGGREGATION ────────────────────────────────────────────
+// All functions below return only numbers and labels — no raw
+// row data, no names, no emails, no IDs ever leave this script.
 
 function aggregateData() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -108,7 +141,6 @@ function aggregateData() {
   return { stats, engagement, impact, mentor, themes, lastUpdated: new Date().toISOString() };
 }
 
-// Average all Likert columns across every row in a tab.
 function avgLikertColumn(rows, col) {
   const vals = rows.map(r => parseFloat(r[col])).filter(v => !isNaN(v) && v >= 1 && v <= 5);
   if (!vals.length) return 0;
@@ -133,10 +165,8 @@ function buildEngagement(ss) {
 function buildImpact(ss) {
   const { preTab, postTab, questions, preColumns, postColumns } = CONFIG.impact;
   const before = [], after = [];
-
   const preSheet  = ss.getSheetByName(preTab);
   const postSheet = ss.getSheetByName(postTab);
-
   for (let i = 0; i < questions.length; i++) {
     before.push(preSheet  ? avgLikertColumn(getRows(preSheet),  preColumns[i])  : 0);
     after.push(postSheet  ? avgLikertColumn(getRows(postSheet), postColumns[i]) : 0);
@@ -147,10 +177,8 @@ function buildImpact(ss) {
 function buildMentor(ss) {
   const { startTab, endTab, questions, startColumns, endColumns } = CONFIG.mentor;
   const start = [], end = [];
-
   const startSheet = ss.getSheetByName(startTab);
   const endSheet   = ss.getSheetByName(endTab);
-
   for (let i = 0; i < questions.length; i++) {
     start.push(startSheet ? avgLikertColumn(getRows(startSheet), startColumns[i]) : 0);
     end.push(endSheet     ? avgLikertColumn(getRows(endSheet),   endColumns[i])   : 0);
@@ -159,7 +187,8 @@ function buildMentor(ss) {
 }
 
 function buildThemes(ss) {
-  // Collect all open-ended text from every survey tab
+  // Collects raw open-ended text locally, then discards it.
+  // Only the keyword match counts are returned.
   const allText = [];
   for (const survey of CONFIG.surveys) {
     const sheet = ss.getSheetByName(survey.tabName);
@@ -172,7 +201,6 @@ function buildThemes(ss) {
       }
     }
   }
-
   const labels = [], counts = [];
   for (const theme of CONFIG.themes) {
     labels.push(theme.label);
@@ -182,7 +210,6 @@ function buildThemes(ss) {
 }
 
 function buildStats(ss, engagement, impact) {
-  // Total responses = sum of all data rows across survey tabs
   const totalResponses = CONFIG.surveys.reduce((sum, survey) => {
     const sheet = ss.getSheetByName(survey.tabName);
     return sum + (sheet ? Math.max(0, sheet.getLastRow() - 1) : 0);
@@ -192,8 +219,7 @@ function buildStats(ss, engagement, impact) {
     ? round1(engagement.values.reduce((a, b) => a + b, 0) / engagement.values.length)
     : 0;
 
-  // Confidence column is index 2 in the impact questions array (0-based)
-  const confidenceIdx = 2;
+  const confidenceIdx = 2; // index of "Confidence" in impact.questions
   const confidenceGrowth = round1(
     (impact.after[confidenceIdx] || 0) - (impact.before[confidenceIdx] || 0)
   );
@@ -211,10 +237,8 @@ function buildStats(ss, engagement, impact) {
 
 // ── HELPERS ────────────────────────────────────────────────
 
-// Returns all data rows (skips the header row at index 0)
 function getRows(sheet) {
-  const values = sheet.getDataRange().getValues();
-  return values.slice(1);
+  return sheet.getDataRange().getValues().slice(1); // skip header
 }
 
 function round1(n) {
@@ -222,8 +246,8 @@ function round1(n) {
 }
 
 // ── LOCAL TEST ─────────────────────────────────────────────
-// Run this function from the Apps Script editor to preview
-// the JSON that will be sent to your dashboard.
+// Run this in the Apps Script editor (not via HTTP) to preview
+// the JSON without needing a token. Check Execution Log for output.
 function testAggregation() {
   Logger.log(JSON.stringify(aggregateData(), null, 2));
 }
