@@ -318,9 +318,9 @@ async function submitToken() {
       gateError.hidden      = false;
       tokenInput.focus();
     }
-  } catch {
+  } catch (err) {
     clearToken();
-    gateError.textContent = 'Connection failed. Check your network and try again.';
+    gateError.textContent = 'Connection failed: ' + err.message;
     gateError.hidden      = false;
   } finally {
     tokenSubmit.disabled    = false;
