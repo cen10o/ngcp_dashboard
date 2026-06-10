@@ -109,7 +109,25 @@ const CONFIG = {
 
 const ALLOWED_DOMAIN = 'valleywater.org';
 
-function doGet() {
+// doGet handles two cases:
+//   ?token=SECRET  →  JSON response for the Vercel-hosted dashboard (token auth)
+//   no token param →  HTML dashboard for direct browser access (Google account auth)
+function doGet(e) {
+  var token = e && e.parameter ? e.parameter.token : null;
+
+  if (token !== null) {
+    // JSON path — called by fetch() from Vercel
+    var expected = PropertiesService.getScriptProperties().getProperty('DASHBOARD_TOKEN');
+    if (!expected) {
+      return jsonOutput({ error: 'Server misconfiguration: DASHBOARD_TOKEN not set in Script Properties.' });
+    }
+    if (token !== expected) {
+      return jsonOutput({ error: 'Unauthorized' });
+    }
+    return jsonOutput(aggregateData());
+  }
+
+  // HTML path — direct browser access, requires Google account
   if (!isAuthorized()) {
     return HtmlService.createHtmlOutput(
       '<body style="font-family:sans-serif;padding:48px;color:#1E2A38;">' +
@@ -124,8 +142,7 @@ function doGet() {
     .addMetaTag('viewport', 'width=device-width, initial-scale=1.0');
 }
 
-// Called from the dashboard via google.script.run — returns
-// aggregated data only, never raw PII.
+// Called from Dashboard.html via google.script.run
 function getAggregatedData() {
   if (!isAuthorized()) throw new Error('Access denied.');
   return aggregateData();
@@ -134,6 +151,12 @@ function getAggregatedData() {
 function isAuthorized() {
   var email = Session.getActiveUser().getEmail();
   return email.endsWith('@' + ALLOWED_DOMAIN);
+}
+
+function jsonOutput(obj) {
+  return ContentService
+    .createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
 }
 
 // ── LIKERT TEXT → NUMBER MAP ───────────────────────────────
