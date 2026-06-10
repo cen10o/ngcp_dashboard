@@ -438,8 +438,11 @@ async function fetchAndRender() {
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = await res.json();
 
-  if (data.error === "Unauthorized" || data.error) {
-    return false;
+  if (data.error === "Unauthorized") {
+    return false;                     // wrong token — caller shows "Invalid token"
+  }
+  if (data.error) {
+    throw new Error(data.error);      // server-side problem — surface the real message
   }
 
   renderDashboard(data);
