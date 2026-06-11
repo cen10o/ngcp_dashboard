@@ -218,8 +218,8 @@
 //  Paste your deployed Apps Script Web App URL below.
 //  Leave SCRIPT_URL as "" to run on sample data (no gate shown).
 // ============================================================
-const SCRIPT_URL       = "https://script.google.com/macros/s/AKfycbxaUiM0RBqwmRa_AZPZjJwcbujkujXJI0sWKBZamER-I7LLcD10FgkAyGvOKjjDxnaN5A/exec";      // "https://script.google.com/macros/s/.../exec"
-const POLL_INTERVAL_MS = 60000;   // refresh every 60 s // 
+const SCRIPT_URL       = "";      // "https://script.google.com/macros/s/.../exec"
+const POLL_INTERVAL_MS = 60000;   // refresh every 60 s
 
 // ============================================================
 //  SAMPLE DATA  — shown when SCRIPT_URL is empty
@@ -318,9 +318,9 @@ async function submitToken() {
       gateError.hidden      = false;
       tokenInput.focus();
     }
-  } catch (err) {
+  } catch {
     clearToken();
-    gateError.textContent = 'Connection failed: ' + err.message;
+    gateError.textContent = 'Connection failed. Check your network and try again.';
     gateError.hidden      = false;
   } finally {
     tokenSubmit.disabled    = false;
@@ -438,11 +438,8 @@ async function fetchAndRender() {
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = await res.json();
 
-  if (data.error === "Unauthorized") {
-    return false;                     // wrong token — caller shows "Invalid token"
-  }
-  if (data.error) {
-    throw new Error(data.error);      // server-side problem — surface the real message
+  if (data.error === "Unauthorized" || data.error) {
+    return false;
   }
 
   renderDashboard(data);

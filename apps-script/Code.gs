@@ -3,15 +3,19 @@
 //
 //  DEPLOY STEPS:
 //  1. Open your Google Sheet → Extensions → Apps Script
-//  2. In the editor, create two files:
-//       Code.gs     — paste this file
-//       Dashboard.html — paste the Dashboard.html file
-//  3. Fill in CONFIG below with your real tab names & column indices
-//  4. Click Deploy → New deployment → Web app
+//  2. Delete any existing code and paste this entire file
+//  3. Fill in CONIFG below with your real tab names & column indices
+//  4. Set your secret token (ONE-TIME SETUP):
+//       Apps Script editor → Project Settings (gear icon)
+//       → Script properties → Add property
+//       Name:  DASHBOARD_TOKEN
+//       Value: any strong random string you choose
+//              (e.g. generate one at: https://1password.com/password-generator/)
+//  5. Click Deploy → New deployment → Web app
 //       Execute as: Me
-//       Who has access: Anyone with Google Account
-//  5. Copy the Web app URL and share it with your team
-//     (only signed-in Google users can open it)
+//       Who has access: Anyone   ← token is the auth layer, not Google login
+//  6. Copy the Web app URL → paste into index.html as SCRIPT_URL
+//  7. Share the token value with anyone who needs dashboard access
 //
 //  PRIVACY NOTE:
 //  This script NEVER returns individual responses. Only aggregated numbers
@@ -102,58 +106,26 @@ const CONFIG = {
   ],
 };
 
-// ── WEB APP ENTRY POINT ────────────────────────────────────
-// Serves Dashboard.html to any signed-in Google user.
-// Access is controlled by the deployment setting:
-//   "Who has access: Anyone with Google Account"
+// ── AUTHENTICATION ─────────────────────────────────────────
 
-const ALLOWED_DOMAIN = 'valleywater.org';
-
-// doGet handles two cases:
-//   ?token=SECRET  →  JSON response for the Vercel-hosted dashboard (token auth)
-//   no token param →  HTML dashboard for direct browser access (Google account auth)
 function doGet(e) {
-  var token = e && e.parameter ? e.parameter.token : null;
+  const token    = e && e.parameter ? e.parameter.token : null;
+  const expected = PropertiesService.getScriptProperties().getProperty('DASHBOARD_TOKEN');
 
-  if (token !== null) {
-    // JSON path — called by fetch() from Vercel
-    var expected = PropertiesService.getScriptProperties().getProperty('DASHBOARD_TOKEN');
-    if (!expected) {
-      return jsonOutput({ error: 'Server misconfiguration: DASHBOARD_TOKEN not set in Script Properties.' });
-    }
-    if (token !== expected) {
-      return jsonOutput({ error: 'Unauthorized' });
-    }
-    return jsonOutput(aggregateData());
+  // Reject if the token property was never configured.
+  if (!expected) {
+    return jsonResponse({ error: 'Server misconfiguration: DASHBOARD_TOKEN not set in Script Properties.' });
   }
 
-  // HTML path — direct browser access, requires Google account
-  if (!isAuthorized()) {
-    return HtmlService.createHtmlOutput(
-      '<body style="font-family:sans-serif;padding:48px;color:#1E2A38;">' +
-      '<h2 style="color:#E05A3A;">Access denied</h2>' +
-      '<p>This dashboard is restricted to <strong>@' + ALLOWED_DOMAIN + '</strong> accounts.</p>' +
-      '<p>Sign in with your organization account and try again.</p>' +
-      '</body>'
-    ).setTitle('Access Denied');
+  // Reject if the caller didn't supply the right token.
+  if (token !== expected) {
+    return jsonResponse({ error: 'Unauthorized' });
   }
-  return HtmlService.createHtmlOutputFromFile('Dashboard')
-    .setTitle('Summer Internship Dashboard')
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1.0');
+
+  return jsonResponse(aggregateData());
 }
 
-// Called from Dashboard.html via google.script.run
-function getAggregatedData() {
-  if (!isAuthorized()) throw new Error('Access denied.');
-  return aggregateData();
-}
-
-function isAuthorized() {
-  var email = Session.getActiveUser().getEmail();
-  return email.endsWith('@' + ALLOWED_DOMAIN);
-}
-
-function jsonOutput(obj) {
+function jsonResponse(obj) {
   return ContentService
     .createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
